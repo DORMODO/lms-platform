@@ -5,7 +5,10 @@ networks:
     driver: bridge
 
 services:
-  # Nginx reverse proxy (single entry point on port 80)
+
+  # =======================
+  # ENTRY POINT
+  # =======================
   nginx:
     image: nginx:alpine
     container_name: nginx
@@ -14,103 +17,170 @@ services:
     volumes:
       - ./nginx.aws.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - api-gateway
-      - lms-frontend
+      api-gateway:
+        condition: service_started
+      lms-frontend:
+        condition: service_started
+    restart: unless-stopped
     networks:
       - lms-network
 
+  # =======================
+  # DATABASE
+  # =======================
+  shared-db:
+    image: postgres:16
+    container_name: shared-db
+    environment:
+      POSTGRES_DB: lms_db
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d lms_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - lms-network
+
+  # =======================
+  # AUTH
+  # =======================
   auth-service:
-    build:
-      context: ./auth-service
-      dockerfile: Dockerfile
+    build: ./auth-service
     container_name: auth-service
     environment:
       SPRING_PROFILES_ACTIVE: aws
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:5432/lms_db
-      SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-86400000}
-      JWT_REFRESH_EXPIRATION_MS: ${JWT_REFRESH_EXPIRATION_MS:-604800000}
-      PASSWORD_PEPPER: ${PASSWORD_PEPPER}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SERVER_PORT: 8086
+      SPRING_DATASOURCE_URL: jdbc:postgresql://shared-db:5432/lms_db
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
+      JWT_SECRET: ${JWT_SECRET:-supersecretkey-supersecretkey-2026}
+      PASSWORD_PEPPER: ${PASSWORD_PEPPER:-yC8#uh)ZwOn%]/$!|Wa@(k-*u_37f-[T}
+    depends_on:
+      shared-db:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - lms-network
 
+  # =======================
+  # USER
+  # =======================
   user-service:
-    build:
-      context: ./user-service
-      dockerfile: Dockerfile
+    build: ./user-service
     container_name: user-service
     environment:
       SPRING_PROFILES_ACTIVE: aws
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:5432/lms_db
-      SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SERVER_PORT: 8081
+      SPRING_DATASOURCE_URL: jdbc:postgresql://shared-db:5432/lms_db
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
+    depends_on:
+      shared-db:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - lms-network
 
+  # =======================
+  # COURSE
+  # =======================
   course-service:
-    build:
-      context: ./course-service
-      dockerfile: Dockerfile
+    build: ./course-service
     container_name: course-service
     environment:
       SPRING_PROFILES_ACTIVE: aws
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:5432/course_db
-      SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SERVER_PORT: 8083
+      SPRING_DATASOURCE_URL: jdbc:postgresql://shared-db:5432/lms_db
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
       NOTIFICATION_SERVICE_URL: http://notification-service:8085
+    depends_on:
+      shared-db:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - lms-network
 
+  # =======================
+  # PAYMENT
+  # =======================
   payment-service:
-    build:
-      context: ./payment-service
-      dockerfile: Dockerfile
+    build: ./payment-service
     container_name: payment-service
     environment:
       SPRING_PROFILES_ACTIVE: aws
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:5432/payment_db
-      SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SERVER_PORT: 8084
+      SPRING_DATASOURCE_URL: jdbc:postgresql://shared-db:5432/lms_db
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
       COURSE_SERVICE_URL: http://course-service:8083
+    depends_on:
+      shared-db:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - lms-network
 
+  # =======================
+  # NOTIFICATION
+  # =======================
   notification-service:
-    build:
-      context: ./notification-service
-      dockerfile: Dockerfile
+    build: ./notification-service
     container_name: notification-service
     environment:
       SPRING_PROFILES_ACTIVE: aws
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:5432/notification_db
-      SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SERVER_PORT: 8085
+      SPRING_DATASOURCE_URL: jdbc:postgresql://shared-db:5432/lms_db
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
+    depends_on:
+      shared-db:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - lms-network
 
+  # =======================
+  # REVIEW
+  # =======================
   review-service:
-    build:
-      context: ./review-service
-      dockerfile: Dockerfile
+    build: ./review-service
     container_name: review-service
     environment:
       SPRING_PROFILES_ACTIVE: aws
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${RDS_HOST}:5432/review_db
-      SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SERVER_PORT: 8087
+      SPRING_DATASOURCE_URL: jdbc:postgresql://shared-db:5432/lms_db
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
+      COURSE_SERVICE_URL: http://course-service:8083
+    depends_on:
+      shared-db:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - lms-network
 
+  # =======================
+  # API GATEWAY
+  # =======================
   api-gateway:
-    build:
-      context: ./api-gateway
-      dockerfile: Dockerfile
+    build: ./api-gateway
     container_name: api-gateway
     environment:
       SPRING_PROFILES_ACTIVE: aws
-      JWT_SECRET: ${JWT_SECRET}
+      SERVER_PORT: 8080
+      JWT_SECRET: ${JWT_SECRET:-supersecretkey-supersecretkey-2026}
       AUTH_SERVICE_URL: http://auth-service:8086
       USER_SERVICE_URL: http://user-service:8081
       COURSE_SERVICE_URL: http://course-service:8083
@@ -119,23 +189,34 @@ services:
       REVIEW_SERVICE_URL: http://review-service:8087
       ALLOWED_ORIGINS: "*"
     depends_on:
-      - auth-service
-      - user-service
-      - course-service
-      - notification-service
-      - payment-service
-      - review-service
+      auth-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      course-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+      review-service:
+        condition: service_started
+    restart: unless-stopped
     networks:
       - lms-network
 
+  # =======================
+  # FRONTEND
+  # =======================
   lms-frontend:
     build:
       context: ./lms-frontend
-      dockerfile: Dockerfile
       args:
         VITE_API_URL: /api
     container_name: lms-frontend
     depends_on:
-      - api-gateway
+      api-gateway:
+        condition: service_started
+    restart: unless-stopped
     networks:
       - lms-network
