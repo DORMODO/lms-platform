@@ -7,5 +7,4 @@ torch
 numpy
 pandas
 scikit-learn
-pickle5
 py-eureka-client

@@ -1,16 +1,19 @@
 import os
-import eureka_client
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 def register_with_eureka(port: int = None):
+    eureka_server_url = os.environ.get("EUREKA_SERVER_URL", "")
+    if not eureka_server_url:
+        logger.info("EUREKA_SERVER_URL not set, skipping Eureka registration")
+        return
+
+    import eureka_client
+
     if port is None:
-        port = int(os.environ.get("SERVICE_PORT", 8084))
-    eureka_server_url = os.environ.get(
-        "EUREKA_SERVER_URL", "http://localhost:8761/eureka/"
-    )
+        port = int(os.environ.get("SERVICE_PORT", 8088))
     service_ip = os.environ.get("SERVICE_IP", "localhost")
     service_name = os.environ.get("EUREKA_APP_NAME", "semantic-search-service")
 
